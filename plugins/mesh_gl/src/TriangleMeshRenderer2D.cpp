@@ -120,8 +120,7 @@ bool TriangleMeshRenderer2D::Render(core_gl::view::CallRender2DGL& call) {
     }
 
     // Get camera transformation matrices
-    glGetFloatv(GL_MODELVIEW_MATRIX, this->camera.model_view.data());
-    glGetFloatv(GL_PROJECTION_MATRIX, this->camera.projection.data());
+    this->camera = call.GetCamera();
 
     // Update triangles (connection mandatory)
     auto get_triangles = this->triangle_mesh_slot.CallAs<mesh::TriangleMeshCall>();
@@ -212,6 +211,16 @@ bool TriangleMeshRenderer2D::Render(core_gl::view::CallRender2DGL& call) {
             new_mask = true;
         }
 
+        const auto num_vertices = this->render_data.vertices->size() / 3;
+
+        if (num_vertices != this->render_data.values->data->size()) {
+            megamol::core::utility::log::Log::DefaultLog.WriteError(
+                "Number of vertices and data values do not match. [%s, %s, line %d]\n", __FILE__, __FUNCTION__,
+                __LINE__);
+
+            return false;
+        }
+
         // Prepare OpenGL buffers
         glBindVertexArray(this->render_data.vao);
 
@@ -229,6 +238,14 @@ bool TriangleMeshRenderer2D::Render(core_gl::view::CallRender2DGL& call) {
         glBindVertexArray(0);
 
         if (new_mask) {
+            if (this->render_data.mask != nullptr && num_vertices != this->render_data.mask->size()) {
+                megamol::core::utility::log::Log::DefaultLog.WriteError(
+                    "Number of vertices and mask values do not match. [%s, %s, line %d]\n", __FILE__, __FUNCTION__,
+                    __LINE__);
+
+                return false;
+            }
+
             glBindVertexArray(this->render_data.vao);
 
             glBindBuffer(GL_ARRAY_BUFFER, this->render_data.mbo);
@@ -287,9 +304,9 @@ bool TriangleMeshRenderer2D::Render(core_gl::view::CallRender2DGL& call) {
         glDepthMask(GL_FALSE);
 
         glUniformMatrix4fv(this->render_data.shader_program->getUniformLocation("model_view_matrix"), 1, GL_FALSE,
-            this->camera.model_view.data());
+            glm::value_ptr(this->camera.getViewMatrix()));
         glUniformMatrix4fv(this->render_data.shader_program->getUniformLocation("projection_matrix"), 1, GL_FALSE,
-            this->camera.projection.data());
+            glm::value_ptr(this->camera.getProjectionMatrix()));
 
         glUniform1f(
             this->render_data.shader_program->getUniformLocation("min_value"), this->render_data.values->min_value);
