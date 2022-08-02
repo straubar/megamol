@@ -6,6 +6,7 @@
 megamol_plugin(flowvis
   BUILD_DEFAULT OFF
   DEPENDS_PLUGINS
+    mmstd
     mesh)
 
 if (flowvis_PLUGIN_ENABLED)
