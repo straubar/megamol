@@ -5,10 +5,10 @@
  * Alle Rechte vorbehalten.
  */
 #include "MPIVolumeAggregator.h"
+#include "cluster/mpi/MpiCall.h"
 #include "geometry_calls/MultiParticleDataCall.h"
-#include "mmcore/cluster/mpi/MpiCall.h"
 #include "mmcore/param/EnumParam.h"
-#include "mmcore/utility/sys/SystemInformation.h"
+#include "vislib/sys/SystemInformation.h"
 #include <chrono>
 
 using namespace megamol;

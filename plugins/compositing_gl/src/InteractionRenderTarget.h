@@ -5,9 +5,7 @@
  * All rights reserved.
  */
 
-#ifndef INTERACTION_RENDER_TARGET_H_INCLUDED
-#define INTERACTION_RENDER_TARGET_H_INCLUDED
-
+#pragma once
 
 #include "SimpleRenderTarget.h"
 
@@ -52,7 +50,7 @@ protected:
      *
      * @return The return value of the function.
      */
-    bool Render(core_gl::view::CallRender3DGL& call);
+    bool Render(mmstd_gl::CallRender3DGL& call);
 
     /**
      *
@@ -70,6 +68,3 @@ private:
 
 } // namespace compositing
 } // namespace megamol
-
-
-#endif // !INTERACTION_RENDER_TARGET_H_INCLUDED

@@ -5,16 +5,14 @@
  * All rights reserved.
  */
 
-#ifndef SIMPLE_RENDER_TARGET_H_INCLUDED
-#define SIMPLE_RENDER_TARGET_H_INCLUDED
+#pragma once
 
+#include <glowl/FramebufferObject.hpp>
 
 #include "mmcore/CalleeSlot.h"
-#include "mmcore/view/RendererModule.h"
-#include "mmcore_gl/view/CallRender3DGL.h"
-
-#include "glowl/FramebufferObject.hpp"
-#include "mmcore_gl/ModuleGL.h"
+#include "mmstd/renderer/RendererModule.h"
+#include "mmstd_gl/ModuleGL.h"
+#include "mmstd_gl/renderer/CallRender3DGL.h"
 
 namespace megamol {
 namespace compositing {
@@ -22,7 +20,7 @@ namespace compositing {
 /**
  * TODO
  */
-class SimpleRenderTarget : public core::view::RendererModule<core_gl::view::CallRender3DGL, core_gl::ModuleGL> {
+class SimpleRenderTarget : public core::view::RendererModule<mmstd_gl::CallRender3DGL, mmstd_gl::ModuleGL> {
 public:
     /**
      * Answer the name of this module.
@@ -80,7 +78,7 @@ protected:
      *
      * @return The return value of the function.
      */
-    bool GetExtents(core_gl::view::CallRender3DGL& call);
+    bool GetExtents(mmstd_gl::CallRender3DGL& call);
 
     /**
      * The render callback.
@@ -89,7 +87,7 @@ protected:
      *
      * @return The return value of the function.
      */
-    bool Render(core_gl::view::CallRender3DGL& call);
+    bool Render(mmstd_gl::CallRender3DGL& call);
 
     /**
      *
@@ -148,5 +146,3 @@ private:
 
 } // namespace compositing
 } // namespace megamol
-
-#endif

@@ -14,14 +14,14 @@
 #include "io/MMSPDHeader.h"
 #include "mmcore/CalleeSlot.h"
 #include "mmcore/param/ParamSlot.h"
-#include "mmcore/utility/sys/Thread.h"
-#include "mmcore/view/AnimDataModule.h"
+#include "mmstd/data/AnimDataModule.h"
 #include "vislib/RawStorage.h"
 #include "vislib/RawStorageWriter.h"
 #include "vislib/math/Cuboid.h"
 #include "vislib/sys/CriticalSection.h"
 #include "vislib/sys/Event.h"
 #include "vislib/sys/File.h"
+#include "vislib/sys/Thread.h"
 #include "vislib/types.h"
 
 

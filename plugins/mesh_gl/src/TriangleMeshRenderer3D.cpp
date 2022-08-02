@@ -18,7 +18,7 @@
 #include "mmcore/param/FlexEnumParam.h"
 #include "mmcore/param/TransferFunctionParam.h"
 #include "mmcore/utility/DataHash.h"
-#include "mmcore/view/CallClipPlane.h"
+#include "mmstd/renderer/CallClipPlane.h"
 
 #include "mmcore_gl/utility/ShaderFactory.h"
 
@@ -140,9 +140,6 @@ bool TriangleMeshRenderer3D::get_input_data() {
     auto mdc_ptr = this->mesh_data_slot.CallAs<mesh::MeshDataCall>();
 
     if (tmc_ptr == nullptr) {
-        megamol::core::utility::log::Log::DefaultLog.WriteError(
-            "Triangle mesh input is not connected. [%s, %s, line %d]\n", __FILE__, __FUNCTION__, __LINE__);
-
         return false;
     }
 
@@ -205,7 +202,8 @@ bool TriangleMeshRenderer3D::get_input_data() {
         this->mesh_data_hash = mdc_ptr->DataHash();
     }
 
-    if (mdc_ptr != nullptr && !this->data_set.Param<core::param::FlexEnumParam>()->Value().empty()) {
+    if (mdc_ptr != nullptr &&
+        (!this->data_set.Param<core::param::FlexEnumParam>()->Value().empty() && this->data_set.IsDirty())) {
         this->render_data.values = mdc_ptr->get_data(this->data_set.Param<core::param::FlexEnumParam>()->Value());
 
         this->data_set.ResetDirty();
@@ -222,6 +220,7 @@ bool TriangleMeshRenderer3D::get_input_data() {
 
         const auto& color = this->default_color.Param<core::param::ColorParam>()->Value();
         this->default_color.ResetDirty();
+        this->data_set.ResetDirty();
 
         std::stringstream ss;
         ss << "{\"Interpolation\":\"LINEAR\",\"Nodes\":["
@@ -232,8 +231,11 @@ bool TriangleMeshRenderer3D::get_input_data() {
         this->render_data.values->transfer_function = ss.str();
         this->render_data.values->transfer_function_dirty = true;
 
-        this->render_data.values->data =
-            std::make_shared<std::vector<GLfloat>>(this->render_data.vertices->size() / 3, 1.0f);
+        this->render_data.values->data = std::make_shared<std::vector<GLfloat>>();
+
+        if (this->render_data.vertices != nullptr) {
+            this->render_data.values->data->resize(this->render_data.vertices->size() / 3, 1.0f);
+        }
 
         this->mesh_data_changed = true;
     }
@@ -243,12 +245,8 @@ bool TriangleMeshRenderer3D::get_input_data() {
 
 bool TriangleMeshRenderer3D::get_input_extent() {
     auto tmc_ptr = this->triangle_mesh_slot.CallAs<mesh::TriangleMeshCall>();
-    auto mdc_ptr = this->triangle_mesh_slot.CallAs<mesh::MeshDataCall>();
 
     if (tmc_ptr == nullptr) {
-        megamol::core::utility::log::Log::DefaultLog.WriteError(
-            "Triangle mesh input is not connected. [%s, %s, line %d]\n", __FILE__, __FUNCTION__, __LINE__);
-
         return false;
     }
 
@@ -287,7 +285,7 @@ bool TriangleMeshRenderer3D::getDataCallback(core::Call& call) {
     // Get render task from rhs
     auto rhs_rtc = this->m_renderTask_rhs_slot.CallAs<CallGPURenderTaskData>();
 
-    std::vector<std::shared_ptr<GPURenderTaskCollection>> rt_collections;
+    auto rt_collections = std::make_shared<std::vector<std::shared_ptr<GPURenderTaskCollection>>>();
 
     if (rhs_rtc != nullptr) {
         if (!(*rhs_rtc)(0)) {
@@ -301,128 +299,145 @@ bool TriangleMeshRenderer3D::getDataCallback(core::Call& call) {
         rt_collections = rhs_rtc->getData();
     }
 
-    rt_collections.push_back(this->m_rendertask_collection.first);
+    if (this->render_data.vertices != nullptr && this->render_data.indices != nullptr) {
+        const auto num_vertices = this->render_data.vertices->size() / 3;
 
-    const std::string identifier("triangle_mesh");
+        if (num_vertices != this->render_data.values->data->size()) {
+            megamol::core::utility::log::Log::DefaultLog.WriteError(
+                "Number of vertices and data values do not match. [%s, %s, line %d]\n", __FILE__, __FUNCTION__,
+                __LINE__);
 
-    if (this->triangle_mesh_changed || this->mesh_data_changed || this->shader_changed) {
-        clearRenderTaskCollection();
+            return false;
+        } else if (this->render_data.normals != nullptr && num_vertices != this->render_data.normals->size() / 3) {
+            megamol::core::utility::log::Log::DefaultLog.WriteError(
+                "Number of vertices and normals do not match. [%s, %s, line %d]\n", __FILE__, __FUNCTION__, __LINE__);
 
-        // Create mesh
-        this->render_data.mesh = std::make_shared<GPUMeshCollection>();
-
-        using vbi_t = typename std::vector<GLfloat>::iterator;
-        using ibi_t = typename std::vector<GLuint>::iterator;
-
-        std::vector<glowl::VertexLayout> vertex_descriptors{
-            glowl::VertexLayout(3 * sizeof(float), {glowl::VertexLayout::Attribute(3, GL_FLOAT, GL_FALSE, 0)}),
-            glowl::VertexLayout(1 * sizeof(float), {glowl::VertexLayout::Attribute(1, GL_FLOAT, GL_FALSE, 0)})};
-
-        if (this->render_data.normals != nullptr) {
-            vertex_descriptors.push_back(
-                glowl::VertexLayout(3 * sizeof(float), {glowl::VertexLayout::Attribute(3, GL_FLOAT, GL_TRUE, 0)}));
-        }
-
-        std::vector<std::pair<vbi_t, vbi_t>> vertex_buffer{
-            {this->render_data.vertices->begin(), this->render_data.vertices->end()},
-            {this->render_data.values->data->begin(), this->render_data.values->data->end()}};
-
-        if (this->render_data.normals != nullptr) {
-            vertex_buffer.push_back({this->render_data.normals->begin(), this->render_data.normals->end()});
-        }
-
-        std::pair<ibi_t, ibi_t> index_buffer{this->render_data.indices->begin(), this->render_data.indices->end()};
-
-        this->render_data.mesh->template addMesh<vbi_t, ibi_t>(
-            identifier, vertex_descriptors, vertex_buffer, index_buffer, GL_UNSIGNED_INT, GL_STATIC_DRAW, GL_TRIANGLES);
-
-        // Create render task
-        const auto& mesh_data = this->render_data.mesh->getSubMeshData().at(identifier);
-
-        std::memcpy(&this->render_data.per_draw_data[per_draw_data_t::offset_min_value],
-            &this->render_data.values->min_value, per_draw_data_t::size_min_value);
-        std::memcpy(&this->render_data.per_draw_data[per_draw_data_t::offset_max_value],
-            &this->render_data.values->max_value, per_draw_data_t::size_max_value);
-
-        this->m_rendertask_collection.first->clear();
-        this->m_rendertask_collection.first->addRenderTask(identifier, this->active_shader_program,
-            mesh_data.mesh->mesh, mesh_data.sub_mesh_draw_command, this->render_data.per_draw_data);
-    }
-
-    if (this->render_data.values->transfer_function_dirty || this->triangle_mesh_changed || this->mesh_data_changed ||
-        this->shader_changed) {
-        // Create texture for transfer function
-        std::vector<GLfloat> texture_data;
-        int transfer_function_size, _unused__height;
-
-        const auto valid_tf = core::param::TransferFunctionParam::GetTextureData(
-            this->render_data.values->transfer_function, texture_data, transfer_function_size, _unused__height);
-
-        if (!valid_tf) {
             return false;
         }
 
-        if (this->render_data.transfer_function != 0) {
-            glDeleteTextures(1, &this->render_data.transfer_function);
+        rt_collections->push_back(this->m_rendertask_collection.first);
+
+        const std::string identifier("triangle_mesh");
+
+        if (this->triangle_mesh_changed || this->mesh_data_changed || this->shader_changed) {
+            clearRenderTaskCollection();
+
+            // Create mesh
+            this->render_data.mesh = std::make_shared<GPUMeshCollection>();
+
+            using vbi_t = typename std::vector<GLfloat>::iterator;
+            using ibi_t = typename std::vector<GLuint>::iterator;
+
+            std::vector<glowl::VertexLayout> vertex_descriptors{
+                glowl::VertexLayout(3 * sizeof(float), {glowl::VertexLayout::Attribute(3, GL_FLOAT, GL_FALSE, 0)}),
+                glowl::VertexLayout(1 * sizeof(float), {glowl::VertexLayout::Attribute(1, GL_FLOAT, GL_FALSE, 0)})};
+
+            if (this->render_data.normals != nullptr) {
+                vertex_descriptors.push_back(
+                    glowl::VertexLayout(3 * sizeof(float), {glowl::VertexLayout::Attribute(3, GL_FLOAT, GL_TRUE, 0)}));
+            }
+
+            std::vector<std::pair<vbi_t, vbi_t>> vertex_buffer{
+                {this->render_data.vertices->begin(), this->render_data.vertices->end()},
+                {this->render_data.values->data->begin(), this->render_data.values->data->end()}};
+
+            if (this->render_data.normals != nullptr) {
+                vertex_buffer.push_back({this->render_data.normals->begin(), this->render_data.normals->end()});
+            }
+
+            std::pair<ibi_t, ibi_t> index_buffer{this->render_data.indices->begin(), this->render_data.indices->end()};
+
+            this->render_data.mesh->template addMesh<vbi_t, ibi_t>(identifier, vertex_descriptors, vertex_buffer,
+                index_buffer, GL_UNSIGNED_INT, GL_STATIC_DRAW, GL_TRIANGLES);
+
+            // Create render task
+            const auto& mesh_data = this->render_data.mesh->getSubMeshData().at(identifier);
+
+            std::memcpy(&this->render_data.per_draw_data[per_draw_data_t::offset_min_value],
+                &this->render_data.values->min_value, per_draw_data_t::size_min_value);
+            std::memcpy(&this->render_data.per_draw_data[per_draw_data_t::offset_max_value],
+                &this->render_data.values->max_value, per_draw_data_t::size_max_value);
+
+            this->m_rendertask_collection.first->clear();
+            this->m_rendertask_collection.first->addRenderTask(identifier, this->active_shader_program,
+                mesh_data.mesh->mesh, mesh_data.sub_mesh_draw_command, this->render_data.per_draw_data);
         }
 
-        glGenTextures(1, &this->render_data.transfer_function);
+        if (this->render_data.values->transfer_function_dirty || this->triangle_mesh_changed ||
+            this->mesh_data_changed || this->shader_changed) {
+            // Create texture for transfer function
+            std::vector<GLfloat> texture_data;
+            int transfer_function_size, _unused__height;
 
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_1D, this->render_data.transfer_function);
+            const auto valid_tf = core::param::TransferFunctionParam::GetTextureData(
+                this->render_data.values->transfer_function, texture_data, transfer_function_size, _unused__height);
 
-        glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            if (!valid_tf) {
+                return false;
+            }
 
-        glTexImage1D(GL_TEXTURE_1D, 0, GL_RGBA, static_cast<GLsizei>(transfer_function_size), 0, GL_RGBA, GL_FLOAT,
-            static_cast<GLvoid*>(texture_data.data()));
+            if (this->render_data.transfer_function != 0) {
+                glDeleteTextures(1, &this->render_data.transfer_function);
+            }
 
-        glBindTexture(GL_TEXTURE_1D, 0);
+            glGenTextures(1, &this->render_data.transfer_function);
 
-        const auto transfer_function_handle = glGetTextureHandleARB(this->render_data.transfer_function);
-        glMakeTextureHandleResidentARB(transfer_function_handle);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_1D, this->render_data.transfer_function);
 
-        // Update per draw data
-        std::memcpy(&this->render_data.per_draw_data[per_draw_data_t::offset_tf], &transfer_function_handle,
-            per_draw_data_t::size_tf);
+            glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-        this->m_rendertask_collection.first->updatePerDrawData(identifier, this->render_data.per_draw_data);
-    }
+            glTexImage1D(GL_TEXTURE_1D, 0, GL_RGBA, static_cast<GLsizei>(transfer_function_size), 0, GL_RGBA, GL_FLOAT,
+                static_cast<GLvoid*>(texture_data.data()));
 
-    {
-        auto cp = this->clip_plane_slot.CallAs<core::view::CallClipPlane>();
+            glBindTexture(GL_TEXTURE_1D, 0);
 
-        if (cp != nullptr && (*cp)(0)) {
-            // Set clip plane flag to enabled
-            const int use_plane = 1;
+            const auto transfer_function_handle = glGetTextureHandleARB(this->render_data.transfer_function);
+            glMakeTextureHandleResidentARB(transfer_function_handle);
 
-            std::memcpy(&this->render_data.per_draw_data[per_draw_data_t::offset_plane_bool], &use_plane,
-                per_draw_data_t::size_plane_bool);
+            // Update per draw data
+            std::memcpy(&this->render_data.per_draw_data[per_draw_data_t::offset_tf], &transfer_function_handle,
+                per_draw_data_t::size_tf);
 
-            // Get clip plane
-            const auto& plane = cp->GetPlane();
-            const std::array<float, 4> abcd_plane{plane.A(), plane.B(), plane.C(), plane.D()};
-
-            std::memcpy(&this->render_data.per_draw_data[per_draw_data_t::offset_plane], abcd_plane.data(),
-                per_draw_data_t::size_plane);
-        } else {
-            // Set clip plane flag to disabled
-            const int use_plane = 0;
-
-            std::memcpy(&this->render_data.per_draw_data[per_draw_data_t::offset_plane_bool], &use_plane,
-                per_draw_data_t::size_plane_bool);
+            this->m_rendertask_collection.first->updatePerDrawData(identifier, this->render_data.per_draw_data);
         }
 
-        this->m_rendertask_collection.first->updatePerDrawData(identifier, this->render_data.per_draw_data);
-    }
+        {
+            auto cp = this->clip_plane_slot.CallAs<core::view::CallClipPlane>();
 
-    {
-        // Set culling mode: 0 - none, 1 - backface culling, 2 - frontface culling
-        const int culling_mode = static_cast<int>(this->culling.Param<core::param::EnumParam>()->Value());
+            if (cp != nullptr && (*cp)(0)) {
+                // Set clip plane flag to enabled
+                const int use_plane = 1;
 
-        std::memcpy(&this->render_data.per_draw_data[per_draw_data_t::offset_culling], &culling_mode,
-            per_draw_data_t::size_culling);
+                std::memcpy(&this->render_data.per_draw_data[per_draw_data_t::offset_plane_bool], &use_plane,
+                    per_draw_data_t::size_plane_bool);
+
+                // Get clip plane
+                const auto& plane = cp->GetPlane();
+                const std::array<float, 4> abcd_plane{plane.A(), plane.B(), plane.C(), plane.D()};
+
+                std::memcpy(&this->render_data.per_draw_data[per_draw_data_t::offset_plane], abcd_plane.data(),
+                    per_draw_data_t::size_plane);
+            } else {
+                // Set clip plane flag to disabled
+                const int use_plane = 0;
+
+                std::memcpy(&this->render_data.per_draw_data[per_draw_data_t::offset_plane_bool], &use_plane,
+                    per_draw_data_t::size_plane_bool);
+            }
+
+            this->m_rendertask_collection.first->updatePerDrawData(identifier, this->render_data.per_draw_data);
+        }
+
+        {
+            // Set culling mode: 0 - none, 1 - backface culling, 2 - frontface culling
+            const int culling_mode = static_cast<int>(this->culling.Param<core::param::EnumParam>()->Value());
+
+            std::memcpy(&this->render_data.per_draw_data[per_draw_data_t::offset_culling], &culling_mode,
+                per_draw_data_t::size_culling);
+        }
     }
 
     this->triangle_mesh_changed = false;

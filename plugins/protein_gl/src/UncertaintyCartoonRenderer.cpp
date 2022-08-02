@@ -20,13 +20,13 @@
 #include "mmcore/param/Vector3fParam.h"
 #include "mmcore/param/Vector4fParam.h"
 #include "mmcore/utility/log/Log.h"
-#include "mmcore/view/CallClipPlane.h"
-#include "mmcore/view/CallRender3D.h"
-#include "mmcore/view/light/DistantLight.h"
-#include "mmcore/view/light/PointLight.h"
 #include "mmcore_gl/utility/ShaderFactory.h"
 #include "mmcore_gl/utility/ShaderSourceFactory.h"
-#include "mmcore_gl/view/CallGetTransferFunctionGL.h"
+#include "mmstd/light/DistantLight.h"
+#include "mmstd/light/PointLight.h"
+#include "mmstd/renderer/CallClipPlane.h"
+#include "mmstd/renderer/CallRender3D.h"
+#include "mmstd_gl/renderer/CallGetTransferFunctionGL.h"
 
 #include "protein_calls/ProteinColor.h"
 #include "protein_calls/RMSF.h"
@@ -40,87 +40,7 @@ using namespace megamol::core;
 using namespace megamol::protein_calls;
 using namespace megamol::protein_gl;
 
-// #define DEBUG_GL
-
 const GLuint SSBObindingPoint = 2;
-
-/*
- * MyFunkyDebugCallback
- */
-// typedef void (APIENTRY *GLDEBUGPROC)(GLenum source,GLenum type,GLuint id,GLenum severity,GLsizei length,const GLchar
-// *message,const void *userParam);
-void APIENTRY MyFunkyDebugCallback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length,
-    const GLchar* message, const GLvoid* userParam) {
-    const char *sourceText, *typeText, *severityText;
-    switch (source) {
-    case GL_DEBUG_SOURCE_API:
-        sourceText = "API";
-        break;
-    case GL_DEBUG_SOURCE_WINDOW_SYSTEM:
-        sourceText = "Window System";
-        break;
-    case GL_DEBUG_SOURCE_SHADER_COMPILER:
-        sourceText = "Shader Compiler";
-        break;
-    case GL_DEBUG_SOURCE_THIRD_PARTY:
-        sourceText = "Third Party";
-        break;
-    case GL_DEBUG_SOURCE_APPLICATION:
-        sourceText = "Application";
-        break;
-    case GL_DEBUG_SOURCE_OTHER:
-        sourceText = "Other";
-        break;
-    default:
-        sourceText = "Unknown";
-        break;
-    }
-    switch (type) {
-    case GL_DEBUG_TYPE_ERROR:
-        typeText = "Error";
-        break;
-    case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR:
-        typeText = "Deprecated Behavior";
-        break;
-    case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:
-        typeText = "Undefined Behavior";
-        break;
-    case GL_DEBUG_TYPE_PORTABILITY:
-        typeText = "Portability";
-        break;
-    case GL_DEBUG_TYPE_PERFORMANCE:
-        typeText = "Performance";
-        break;
-    case GL_DEBUG_TYPE_OTHER:
-        typeText = "Other";
-        break;
-    case GL_DEBUG_TYPE_MARKER:
-        typeText = "Marker";
-        break;
-    default:
-        typeText = "Unknown";
-        break;
-    }
-    switch (severity) {
-    case GL_DEBUG_SEVERITY_HIGH:
-        severityText = "High";
-        break;
-    case GL_DEBUG_SEVERITY_MEDIUM:
-        severityText = "Medium";
-        break;
-    case GL_DEBUG_SEVERITY_LOW:
-        severityText = "Low";
-        break;
-    case GL_DEBUG_SEVERITY_NOTIFICATION:
-        severityText = "Notification";
-        break;
-    default:
-        severityText = "Unknown";
-        break;
-    }
-    megamol::core::utility::log::Log::DefaultLog.WriteMsg(megamol::core::utility::log::Log::LEVEL_ERROR,
-        "[%s %s] (%s %u) %s\n", sourceText, severityText, typeText, id, message);
-}
 
 /*
  * UncertaintyCartoonRenderer::UncertaintyCartoonRenderer (CTOR)
@@ -340,13 +260,12 @@ bool UncertaintyCartoonRenderer::loadTubeShader(void) {
             std::filesystem::path("protein_gl/uncertaintycartoon/uncertain.frag.glsl"));
 
     } catch (glowl::GLSLProgramException const& ex) {
-        megamol::core::utility::log::Log::DefaultLog.WriteMsg(
-            megamol::core::utility::log::Log::LEVEL_ERROR, "[UncertaintyCartoonRenderer] %s", ex.what());
+        megamol::core::utility::log::Log::DefaultLog.WriteError("[UncertaintyCartoonRenderer] %s", ex.what());
     } catch (std::exception const& ex) {
-        megamol::core::utility::log::Log::DefaultLog.WriteMsg(megamol::core::utility::log::Log::LEVEL_ERROR,
+        megamol::core::utility::log::Log::DefaultLog.WriteError(
             "[UncertaintyCartoonRenderer] Unable to compile shader: Unknown exception: %s", ex.what());
     } catch (...) {
-        megamol::core::utility::log::Log::DefaultLog.WriteMsg(megamol::core::utility::log::Log::LEVEL_ERROR,
+        megamol::core::utility::log::Log::DefaultLog.WriteError(
             "[UncertaintyCartoonRenderer] Unable to compile shader: Unknown exception.");
     }
 
@@ -359,10 +278,6 @@ bool UncertaintyCartoonRenderer::loadTubeShader(void) {
 bool UncertaintyCartoonRenderer::create(void) {
     using namespace vislib::sys;
     using namespace vislib_gl::graphics::gl;
-
-#ifdef DEBUG_GL
-    glDebugMessageCallback(MyFunkyDebugCallback, nullptr);
-#endif
 
     // load tube shader
     if (!this->loadTubeShader()) {
@@ -408,7 +323,7 @@ void UncertaintyCartoonRenderer::release(void) {
 /*
  * UncertaintyCartoonRenderer::GetExtents
  */
-bool UncertaintyCartoonRenderer::GetExtents(core_gl::view::CallRender3DGL& call) {
+bool UncertaintyCartoonRenderer::GetExtents(mmstd_gl::CallRender3DGL& call) {
 
     // get pointer to UncertaintyDataCall
     UncertaintyDataCall* udc = this->uncertaintyDataSlot.CallAs<UncertaintyDataCall>();
@@ -630,12 +545,7 @@ bool UncertaintyCartoonRenderer::GetUncertaintyData(UncertaintyDataCall* udc, Mo
 /*
  * UncertaintyCartoonRenderer::Render
  */
-bool UncertaintyCartoonRenderer::Render(core_gl::view::CallRender3DGL& call) {
-
-#ifdef DEBUG_GL
-    glEnable(GL_DEBUG_OUTPUT);
-    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-#endif
+bool UncertaintyCartoonRenderer::Render(mmstd_gl::CallRender3DGL& call) {
 
     // get new data from the MolecularDataCall
     MolecularDataCall* mol = this->GetData(static_cast<unsigned int>(call.Time()));
@@ -1134,11 +1044,6 @@ bool UncertaintyCartoonRenderer::Render(core_gl::view::CallRender3DGL& call) {
     glDisable(GL_VERTEX_PROGRAM_POINT_SIZE);
     // reset stuff
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
-#ifdef DEBUG_GL
-    glDisable(GL_DEBUG_OUTPUT);
-    glDisable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-#endif
 
     //  timer.EndFrame();
 
